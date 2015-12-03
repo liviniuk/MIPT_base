@@ -13,7 +13,8 @@ private:
 	double xi;
 	void vector_copy(std::vector< double >&, std::vector< double >);
 	int steps;
-	double i_plus_half_minmod(double, double, double, double);
+	double df_i(double, double, double);
+	double i_plus_half_minmod_positive(double, double, double, double);
 public:
 	Grid();
 	Grid(int);
@@ -148,22 +149,28 @@ Grid Grid::solve_difference_3layer(int time_steps) {
 
 	double y = dt * xi / dh;		
 	int steps = time_steps / dh;
-	for (int j = 1; j < steps; j++) { // from 1 becouse we start with the 3rd layer, not with the 2nd one
+	for (int j = 1; j < steps; j++) { // starting with 1 because we start with the 3rd layer, not with the 2nd one
 		vector_copy(auxiliary1, auxiliary2);
 		vector_copy(auxiliary2, data);
-		data[0] = data[size - 2] = 0;
-		for (int i = 1; i < size - 1; i++) 
+		data[size - 2] = 0;
+		for (int i = 0; i < size - 1; i++) 
 			data[i] = auxiliary1[i] + y * (auxiliary2[i - 1] - auxiliary2[i + 1]);
 	}
 	return Grid(data, dh, dt, xi);
 }
 
-double Grid::i_plus_half_minmod(double f_minus, double f, double f_plus, double y) {
-	double t1 = f_plus - f;
-	double t2 = f - f_minus;
-	double df = t1 * t2 <= 0 ? 0 : ((t1 < t2 ? t1 : t2) * (t1 > 0 ? 1 : -1));
-	return f + (1 - y) / 2 * df;
-};
+double Grid::df_i(double f_minus, double f, double f_plus) {
+        double t1 = f_plus - f;
+        double t2 = f - f_minus;
+        double a1 = std::abs(t1);
+        double a2 = std::abs(t2);
+        double df = t1 * t2 <= 0 ? 0 : ((a1 < a2 ? a1 : a2) * (t1 > 0 ? 1 : -1));
+        return df;
+    }
+
+double Grid::i_plus_half_minmod_positive(double f_minus, double f, double f_plus, double y) {
+        return f + (1 - y) / 2 * df_i(f_minus, f, f_plus);
+    };
 
 Grid Grid::solve_with_minmod_limiter(int time_steps) {
 	std::vector< double > data(this->data);	
@@ -178,7 +185,7 @@ Grid Grid::solve_with_minmod_limiter(int time_steps) {
 		halfs.clear();
 		halfs.push_back(0); //halfs[0] = f[1/2]
 		for (int i = 1; i < size - 2; i++) {
-			double f_i_plus_half = i_plus_half_minmod(auxiliary[i - 1], auxiliary[i], auxiliary[i + 1], y);
+			double f_i_plus_half = i_plus_half_minmod_positive(auxiliary[i - 1], auxiliary[i], auxiliary[i + 1], y);
 			halfs.push_back(f_i_plus_half);
 		}
 		halfs.push_back(0); // halfs[size - 2] == f[size - 3/2] = 0
@@ -187,37 +194,6 @@ Grid Grid::solve_with_minmod_limiter(int time_steps) {
 			data[i] = auxiliary[i] + y * (halfs[i - 1] - halfs[i]);
 	}
 	return Grid(data, dh, dt, xi);
-}
-
-Grid Grid::solve_diffusion(int time_steps) {
-	int N = 20;
-	double a = 0, b = 5;
-	double h = (b - a) / N;
-	int N_xi = 20;
-	double k = 1.3806485e-23, T = 300, m = 4.002602 * 1.6605402e-27;
-	double xi_kv = sqrt(k * T / m);
-	double xi_cut = 5 * xi_kv;
-	double dxi = 2 * xi_cut / N_xi;
-	//??double dt = h / xi_cut;
-	std::vector< double > w_h, w_xi;
-	double temp = a;
-	for (int i = 0; i < N_xi; i++)
-		w_h.push_back(h * (i - 0.5));
-	for (int i = 0; i < N_xi; i++)
-		w_xi.push_back(-xi_cut + dxi * (i - 0.5));
-	std::vector< std::vector< double > > f(N, vector < double >(N_xi, 0));
-	// Make a bell
-	double p = (int) (5 / dh);
-	double q = (int) (8 / dh);
-	if ((q - p) % 2 == 0)
-		q++;
-	int center = (p + q) / 2;
-	double c = exp(- (p - center) * (p - center) * dh * dh / 2.0);
-	for (int i = p; i < q; i++)
-		 f[0][i] = exp(- (i - center) * (i - center) * dh * dh / 2.0) - c;
-	
-	
-	return f;
 }
 
 Grid Grid::exact_solution(int time_steps) {
